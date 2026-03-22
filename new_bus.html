@@ -1,0 +1,1402 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Такси-Навигатор</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        html, body {
+            height: 100%; 
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+        body {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #333;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Новый хедер с поворотниками */
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 8px 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            flex-shrink: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        
+        .header-title {
+            flex: 1;
+        }
+        
+        .header-title h1 {
+            color: #2a5298;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .header-title p {
+            color: #666;
+            font-size: 10px;
+            line-height: 1.2;
+        }
+        
+        /* Индикаторы поворотников в хедере */
+        .header-indicators {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .header-indicator {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            background: #2c3e50;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 2px solid #555;
+            user-select: none;
+            touch-action: manipulation;
+        }
+        
+        .header-indicator:active {
+            transform: scale(0.95);
+        }
+        
+        .header-indicator.active {
+            animation: blink 0.8s infinite;
+            border-color: #ffaa00;
+        }
+        
+        .header-indicator.left.active {
+            background: #ff6600;
+            box-shadow: 0 0 15px rgba(255, 102, 0, 0.5);
+        }
+        
+        .header-indicator.right.active {
+            background: #ff6600;
+            box-shadow: 0 0 15px rgba(255, 102, 0, 0.5);
+        }
+        
+        .indicator-icon {
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .main-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column-reverse;
+            padding: 10px;
+            gap: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        @media (min-width: 768px) and (orientation: landscape) {
+            .main-container {
+                flex-direction: row;
+            }
+        }
+        
+        .panel {
+            background: white;
+            border-radius: 10px;
+            padding: 12px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 50vh;
+            overflow-y: auto;
+            z-index: 500;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        
+        .panel.collapsed {
+            transform: translateY(-100%);
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        @media (min-width: 768px) and (orientation: landscape) {
+            .panel {
+                width: 320px;
+                max-height: none;
+            }
+            .panel.collapsed {
+                transform: translateX(-100%);
+            }
+        }
+        
+        .map-container {
+            flex: 1;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            min-height: 300px;
+            position: relative;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+        
+        .map-container.expanded {
+            width: 100%;
+            flex: 1 0 100%;
+            margin-left: 0;
+        }
+        
+        @media (min-width: 768px) and (orientation: landscape) {
+            .map-container {
+                width: calc(100% - 320px);
+                transition: width 0.3s ease;
+            }
+            .map-container.expanded {
+                width: 100%;
+                flex: 1 0 100%;
+            }
+        }
+        
+        #map {
+            height: 100%;
+            width: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #2a5298 0%, #1e3c72 100%);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            touch-action: manipulation;
+        }
+        
+        button:active {
+            transform: scale(0.98);
+        }
+        
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+        }
+        
+        .btn-warning {
+            background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);
+            color: #212529;
+        }
+        
+        .status {
+            padding: 8px 10px;
+            border-radius: 6px;
+            background: #f0f8ff;
+            border-left: 3px solid #2a5298;
+            font-size: 12px;
+            line-height: 1.3;
+        }
+        
+        .info-card {
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 10px;
+        }
+        
+        .info-card h3 {
+            color: #2a5298;
+            margin-bottom: 6px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+            font-size: 12px;
+        }
+        
+        .info-item span:last-child {
+            font-weight: 600;
+            color: #1e3c72;
+        }
+        
+        .location-update {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 5px;
+        }
+        
+        .location-update input {
+            flex: 1;
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        .icon {
+            font-size: 16px;
+        }
+        
+        .speed-warning {
+            background: #ffebee;
+            border-left: 3px solid #f44336;
+            color: #c62828;
+            padding: 8px;
+            border-radius: 6px;
+            margin-top: 8px;
+            display: none;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 0.7; }
+            50% { opacity: 1; }
+            100% { opacity: 0.7; }
+        }
+        
+        .speed-display {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px;
+            background: #e8f5e9;
+            border-radius: 6px;
+            margin-top: 6px;
+        }
+        
+        .speed-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2e7d32;
+        }
+        
+        .speed-unit {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .controls-row {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .controls-row button {
+            flex: 1;
+        }
+        
+        .notification {
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            background: #ff5252;
+            color: white;
+            padding: 12px 15px;
+            border-radius: 6px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            display: none;
+            animation: slideIn 0.3s ease;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        .speed-limit-input {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 6px;
+            font-size: 12px;
+        }
+        
+        .speed-limit-input input {
+            width: 60px;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 12px;
+        }
+        
+        /* Уведомление о повороте */
+        .turn-notification {
+            position: fixed;
+            top: 80px;
+            right: 15px;
+            background: linear-gradient(135deg, #ff9800, #ff5722);
+            color: white;
+            padding: 12px 18px;
+            border-radius: 12px;
+            z-index: 1000;
+            display: none;
+            animation: slideInRight 0.3s ease;
+            font-weight: bold;
+            font-size: 16px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .turn-info {
+            background: #fff3e0;
+            border-left: 3px solid #ff9800;
+            padding: 8px;
+            border-radius: 6px;
+            margin-top: 8px;
+            font-size: 12px;
+            display: none;
+        }
+        
+        .turn-info.active {
+            display: block;
+        }
+        
+        .turn-direction {
+            font-weight: bold;
+            color: #ff5722;
+            font-size: 14px;
+        }
+        
+        /* Стили для модального окна заказа */
+        .order-modal {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            border-radius: 15px 15px 0 0;
+            padding: 20px;
+            box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.2);
+            z-index: 2000;
+            transform: translateY(100%);
+            transition: transform 0.3s ease;
+        }
+        
+        .order-modal.active {
+            transform: translateY(0);
+        }
+        
+        .order-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .order-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2a5298;
+        }
+        
+        .order-close {
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: #666;
+            cursor: pointer;
+        }
+        
+        .order-info {
+            margin-bottom: 20px;
+        }
+        
+        .order-details {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        
+        .order-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .order-actions button {
+            flex: 1;
+        }
+        
+        /* Панель управления поездкой */
+        .trip-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            padding: 15px;
+            box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.2);
+            z-index: 1500;
+            display: none;
+        }
+        
+        .trip-panel.active {
+            display: block;
+        }
+        
+        .trip-stage {
+            text-align: center;
+            margin-bottom: 15px;
+            font-weight: 600;
+            color: #2a5298;
+        }
+        
+        .trip-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+        
+        .trip-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .trip-actions button {
+            flex: 1;
+        }
+        
+        /* Экран завершения поездки */
+        .trip-complete {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.95);
+            z-index: 2500;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .trip-complete.active {
+            display: flex;
+        }
+        
+        .trip-complete h2 {
+            color: #28a745;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .trip-cost {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2a5298;
+            margin-bottom: 30px;
+        }
+        
+        .cost-details {
+            width: 100%;
+            max-width: 300px;
+            margin-bottom: 30px;
+        }
+        
+        .cost-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .cost-total {
+            font-weight: bold;
+            font-size: 18px;
+            color: #2a5298;
+        }
+        
+        /* Кнопка скрытия панели этапов */
+        .hide-panel-btn {
+            background: #6c757d;
+            padding: 8px;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        
+        .hide-panel-btn:hover {
+            background: #5a6268;
+        }
+        
+        /* Стили для списка точек маршрута */
+        .waypoints-list {
+            margin-top: 10px;
+            border-top: 1px solid #eee;
+            padding-top: 10px;
+        }
+        
+        .waypoints-list h4 {
+            font-size: 12px;
+            color: #2a5298;
+            margin-bottom: 8px;
+        }
+        
+        .waypoint-item {
+            font-size: 11px;
+            padding: 5px;
+            background: #f8f9fa;
+            margin-bottom: 4px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .waypoint-item.current {
+            background: #e3f2fd;
+            border-left: 3px solid #2a5298;
+        }
+        
+        .waypoint-item.completed {
+            background: #e8f5e9;
+            color: #666;
+            text-decoration: line-through;
+        }
+        
+        .waypoint-number {
+            font-weight: bold;
+            color: #2a5298;
+        }
+        
+        /* Кнопка "Я на месте" */
+        .arrived-button {
+            position: absolute;
+            bottom: 20px;
+            right: 15px;
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            border: none;
+            padding: 12px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            z-index: 400;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            display: none;
+        }
+        
+        .arrived-button.active {
+            display: block;
+        }
+        
+        /* Скроллбар */
+        .panel::-webkit-scrollbar {
+            width: 4px;
+        }
+        
+        .panel::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 2px;
+        }
+        
+        .panel::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 2px;
+        }
+        
+        .leaflet-container {
+            background: #f8f9fa;
+        }
+        
+        .leaflet-control-zoom a {
+            width: 35px !important;
+            height: 35px !important;
+            line-height: 35px !important;
+            font-size: 18px !important;
+        }
+        
+        .leaflet-routing-container {
+            max-height: 150px !important;
+            font-size: 12px !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- Хедер с поворотниками -->
+    <div class="header">
+        <div class="header-title">
+            <h1>🚗 Такси-Навигатор</h1>
+            <p>Поэтапная навигация по маршруту</p>
+        </div>
+        <div class="header-indicators">
+            <div class="header-indicator left" id="leftIndicator">
+                <div class="indicator-icon">◀</div>
+            </div>
+            <div class="header-indicator right" id="rightIndicator">
+                <div class="indicator-icon">▶</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="panel" id="mainPanel">
+            <div class="controls-row">
+                <button id="generateRoute">
+                    <span class="icon">🔄</span>
+                    Начать маршрут
+                </button>
+                <button id="clearRoute">
+                    <span class="icon">🗑️</span>
+                    Очистить
+                </button>
+            </div>
+            
+            <div class="status" id="status">Определение местоположения...</div>
+            
+            <div class="speed-display">
+                <div>
+                    <div>Текущая скорость</div>
+                    <div class="speed-value" id="currentSpeed">0</div>
+                </div>
+                <div class="speed-unit">км/ч</div>
+            </div>
+            
+            <div class="speed-warning" id="speedWarning">
+                ⚠️ Превышение скорости! Снизьте скорость до 30 км/ч
+            </div>
+            
+            <div class="info-card">
+                <h3>📊 Информация о поездке</h3>
+                <div class="info-item">
+                    <span>Текущая цель:</span>
+                    <span id="currentTarget">-</span>
+                </div>
+                <div class="info-item">
+                    <span>Следующая точка:</span>
+                    <span id="nextTarget">-</span>
+                </div>
+                <div class="info-item">
+                    <span>Общее расстояние:</span>
+                    <span id="totalDistance">-</span>
+                </div>
+                <div class="info-item">
+                    <span>Выполнено:</span>
+                    <span id="completedCount">0/0</span>
+                </div>
+                <div class="info-item">
+                    <span>Статус:</span>
+                    <span id="tripStatus">Ожидание маршрута</span>
+                </div>
+            </div>
+            
+            <div class="turn-info" id="turnInfo">
+                <div>🔄 Предстоящий маневр:</div>
+                <div class="turn-direction" id="turnDirection">-</div>
+            </div>
+            
+            <div class="waypoints-list" id="waypointsList">
+                <h4>📌 Маршрутные точки:</h4>
+                <div id="waypointsContainer"></div>
+            </div>
+            
+            <button class="hide-panel-btn" id="hidePanelBtn">🔽 Скрыть панель этапов</button>
+            
+            <div class="location-update">
+                <input type="number" id="updateInterval" value="3000" min="1000" max="10000" step="1000">
+                <span>мс</span>
+            </div>
+            <small>Интервал обновления местоположения</small>
+            
+            <div class="speed-limit-input">
+                <span>Лимит скорости:</span>
+                <input type="number" id="speedLimit" value="30" min="5" max="200">
+                <span>км/ч</span>
+            </div>
+        </div>
+
+        <div class="map-container" id="mapContainer">
+            <div id="map"></div>
+            <button class="arrived-button" id="arrivedButton">📍 Я на месте</button>
+        </div>
+    </div>
+
+    <!-- Модальное окно предпросмотра маршрута -->
+    <div class="order-modal" id="orderModal">
+        <div class="order-header">
+            <div class="order-title">🚕 Маршрут готов</div>
+            <button class="order-close" id="closeOrderModal">✕</button>
+        </div>
+        <div class="order-info">
+            <div class="order-details">
+                <span>Количество точек:</span>
+                <span id="previewPointsCount">-</span>
+            </div>
+            <div class="order-details">
+                <span>Общее расстояние:</span>
+                <span id="previewDistance">-</span>
+            </div>
+            <div class="order-details">
+                <span>Примерное время:</span>
+                <span id="previewDuration">-</span>
+            </div>
+            <div class="order-details">
+                <span>Примерная стоимость:</span>
+                <span id="previewCost">-</span>
+            </div>
+        </div>
+        <div class="order-actions">
+            <button class="btn-danger" id="rejectOrder">Отмена</button>
+            <button class="btn-success" id="acceptOrder">Начать поездку</button>
+        </div>
+    </div>
+
+    <!-- Панель управления поездкой -->
+    <div class="trip-panel" id="tripPanel">
+        <div class="trip-stage" id="tripStage">Этап поездки: Ожидание</div>
+        <div class="trip-info">
+            <div>Пройдено: <span id="tripProgress">0%</span></div>
+            <div>В пути: <span id="tripTime">0 мин</span></div>
+        </div>
+        <div class="trip-actions">
+            <button class="btn-warning" id="cancelTrip">Отмена</button>
+            <button class="btn-success" id="nextStage">Я на месте</button>
+        </div>
+    </div>
+
+    <!-- Экран завершения поездки -->
+    <div class="trip-complete" id="tripComplete">
+        <h2>✅ Поездка завершена!</h2>
+        <div class="trip-cost" id="finalCost">0 руб</div>
+        <div class="cost-details">
+            <div class="cost-item">
+                <span>Пройденное расстояние:</span>
+                <span id="finalDistance">0 км</span>
+            </div>
+            <div class="cost-item">
+                <span>Время в пути:</span>
+                <span id="finalTime">0 мин</span>
+            </div>
+            <div class="cost-item">
+                <span>Тариф (10 руб/км):</span>
+                <span id="distanceCost">0 руб</span>
+            </div>
+            <div class="cost-item">
+                <span>Время ожидания (5 руб/мин):</span>
+                <span id="timeCost">0 руб</span>
+            </div>
+            <div class="cost-item cost-total">
+                <span>Итого:</span>
+                <span id="totalCost">0 руб</span>
+            </div>
+        </div>
+        <button class="btn-success" id="closeTripComplete">Завершить</button>
+    </div>
+
+    <div class="turn-notification" id="turnNotification">
+        ⬅️ Поворот налево через 7 метров
+    </div>
+
+    <div class="notification" id="speedNotification">
+        ⚠️ ПРЕВЫШЕНИЕ СКОРОСТИ!
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+    <script>
+        // ========== МАРШРУТНЫЕ ТОЧКИ ==========
+        const ROUTE_POINTS = [
+            { lat: 56.833070, lng: 35.678086, name: "Въезд" },
+            { lat: 56.832693, lng: 35.672803, name: "Садовая-1" },
+            { lat: 56.830490, lng: 35.666555, name: "Ручей" },
+            { lat: 56.830703, lng: 35.667682, name: "Администрация" },
+            { lat: 56.831303, lng: 35.670045, name: "Экспресс-проход" },
+            { lat: 56.831778, lng: 35.673640, name: "Улица Боровая" },
+            { lat: 56.830937, lng: 35.670547, name: "Семейный парк развлечений" },
+            { lat: 56.830332, lng: 35.668312, name: "Городской отель" },
+            { lat: 56.830564, lng: 35.664875, name: "Пекарня" },
+            { lat: 56.832415, lng: 35.667529, name: "Садовая-2" },
+            { lat: 56.831056, lng: 35.664406, name: "Карьер. Конечная" }
+        ];
+        // =====================================
+
+        let map, userLocation, userMarker, accuracyCircle, pointMarkers = [];
+        let routeControl, watchId, previousPosition, currentSpeed = 0, speedLimit = 30;
+        let updateInterval = 3000;
+        
+        let currentTrip = null;
+        let tripStage = 'idle';
+        let currentPointIndex = 0;
+        let completedPoints = [];
+        let tripStartTime = null;
+        let tripTimer = null;
+        let tripTime = 0;
+        let isPanelCollapsed = false;
+        
+        let currentTurnDirection = null;
+        let manualIndicatorActive = null;
+        let autoIndicatorActive = null;
+        let turnCheckInterval = null;
+
+        // DOM элементы
+        const statusElement = document.getElementById('status');
+        const generateButton = document.getElementById('generateRoute');
+        const clearButton = document.getElementById('clearRoute');
+        const currentTargetElement = document.getElementById('currentTarget');
+        const nextTargetElement = document.getElementById('nextTarget');
+        const totalDistanceElement = document.getElementById('totalDistance');
+        const completedCountElement = document.getElementById('completedCount');
+        const tripStatusElement = document.getElementById('tripStatus');
+        const updateIntervalInput = document.getElementById('updateInterval');
+        const currentSpeedElement = document.getElementById('currentSpeed');
+        const speedWarningElement = document.getElementById('speedWarning');
+        const speedNotificationElement = document.getElementById('speedNotification');
+        const speedLimitInput = document.getElementById('speedLimit');
+        const waypointsContainer = document.getElementById('waypointsContainer');
+        
+        const leftIndicator = document.getElementById('leftIndicator');
+        const rightIndicator = document.getElementById('rightIndicator');
+        const turnNotification = document.getElementById('turnNotification');
+        const turnInfo = document.getElementById('turnInfo');
+        const turnDirectionElement = document.getElementById('turnDirection');
+        const hidePanelBtn = document.getElementById('hidePanelBtn');
+        
+        const orderModal = document.getElementById('orderModal');
+        const closeOrderModal = document.getElementById('closeOrderModal');
+        const rejectOrderButton = document.getElementById('rejectOrder');
+        const acceptOrderButton = document.getElementById('acceptOrder');
+        const previewPointsCount = document.getElementById('previewPointsCount');
+        const previewDistanceElement = document.getElementById('previewDistance');
+        const previewDurationElement = document.getElementById('previewDuration');
+        const previewCostElement = document.getElementById('previewCost');
+        
+        const tripPanel = document.getElementById('tripPanel');
+        const tripStageElement = document.getElementById('tripStage');
+        const tripProgressElement = document.getElementById('tripProgress');
+        const tripTimeElement = document.getElementById('tripTime');
+        const cancelTripButton = document.getElementById('cancelTrip');
+        const nextStageButton = document.getElementById('nextStage');
+        
+        const tripComplete = document.getElementById('tripComplete');
+        const finalCostElement = document.getElementById('finalCost');
+        const finalDistanceElement = document.getElementById('finalDistance');
+        const finalTimeElement = document.getElementById('finalTime');
+        const distanceCostElement = document.getElementById('distanceCost');
+        const timeCostElement = document.getElementById('timeCost');
+        const totalCostElement = document.getElementById('totalCost');
+        const closeTripCompleteButton = document.getElementById('closeTripComplete');
+
+        const mainPanel = document.getElementById('mainPanel');
+        const arrivedButton = document.getElementById('arrivedButton');
+        const mapContainer = document.getElementById('mapContainer');
+
+        // ========== ФУНКЦИИ ПОВОРОТНИКОВ ==========
+        function activateIndicator(direction) {
+            if (direction === 'left') {
+                leftIndicator.classList.add('active');
+                manualIndicatorActive = 'left';
+                autoIndicatorActive = null;
+            } else if (direction === 'right') {
+                rightIndicator.classList.add('active');
+                manualIndicatorActive = 'right';
+                autoIndicatorActive = null;
+            }
+        }
+        
+        function deactivateIndicator(direction) {
+            if (direction === 'left') {
+                leftIndicator.classList.remove('active');
+                if (manualIndicatorActive === 'left') manualIndicatorActive = null;
+            } else if (direction === 'right') {
+                rightIndicator.classList.remove('active');
+                if (manualIndicatorActive === 'right') manualIndicatorActive = null;
+            }
+        }
+        
+        function deactivateAllIndicators() {
+            leftIndicator.classList.remove('active');
+            rightIndicator.classList.remove('active');
+            manualIndicatorActive = null;
+            autoIndicatorActive = null;
+            currentTurnDirection = null;
+            turnInfo.classList.remove('active');
+        }
+        
+        function toggleIndicator(direction) {
+            if (direction === 'left') {
+                if (leftIndicator.classList.contains('active')) {
+                    deactivateIndicator('left');
+                } else {
+                    deactivateAllIndicators();
+                    activateIndicator('left');
+                }
+            } else if (direction === 'right') {
+                if (rightIndicator.classList.contains('active')) {
+                    deactivateIndicator('right');
+                } else {
+                    deactivateAllIndicators();
+                    activateIndicator('right');
+                }
+            }
+        }
+        
+        function autoActivateIndicator(direction, distanceToTurn) {
+            if (manualIndicatorActive !== null) return;
+            
+            if (distanceToTurn <= 7 && distanceToTurn > 0) {
+                if (autoIndicatorActive !== direction) {
+                    deactivateAllIndicators();
+                    activateIndicator(direction);
+                    autoIndicatorActive = direction;
+                    currentTurnDirection = direction;
+                    
+                    const turnText = direction === 'left' ? '⬅️ Поворот НАЛЕВО' : '➡️ Поворот НАПРАВО';
+                    turnNotification.innerHTML = `${turnText} через ${Math.round(distanceToTurn)} м`;
+                    turnNotification.style.display = 'block';
+                    turnDirectionElement.innerHTML = `${turnText} (${Math.round(distanceToTurn)} м)`;
+                    turnInfo.classList.add('active');
+                    
+                    setTimeout(() => {
+                        turnNotification.style.display = 'none';
+                    }, 3000);
+                }
+            } else if (distanceToTurn > 15 || distanceToTurn < -5) {
+                if (autoIndicatorActive === direction) {
+                    deactivateAllIndicators();
+                    turnInfo.classList.remove('active');
+                }
+            }
+        }
+        
+        function analyzeRouteForTurns() {
+            if (!routeControl || !userLocation || tripStage !== 'in_progress') return;
+            
+            const routes = routeControl.getPlan().getWaypoints();
+            if (routes.length < 2) return;
+            
+            const nextWaypoint = routes[1] ? routes[1].latLng : null;
+            if (!nextWaypoint) return;
+            
+            const currentPos = userLocation;
+            const deltaX = nextWaypoint.lng - currentPos.lng;
+            const deltaY = nextWaypoint.lat - currentPos.lat;
+            let angle = Math.atan2(deltaY, deltaX) * 180 / Math.PI;
+            
+            if (previousPosition) {
+                const prevDeltaX = currentPos.lng - previousPosition.lng;
+                const prevDeltaY = currentPos.lat - previousPosition.lat;
+                let prevAngle = Math.atan2(prevDeltaY, prevDeltaX) * 180 / Math.PI;
+                
+                let angleDiff = angle - prevAngle;
+                if (angleDiff > 180) angleDiff -= 360;
+                if (angleDiff < -180) angleDiff += 360;
+                
+                const distanceToNext = calculateDistance(currentPos, nextWaypoint);
+                
+                if (distanceToNext <= 7 && Math.abs(angleDiff) > 15) {
+                    if (angleDiff > 0) {
+                        autoActivateIndicator('right', distanceToNext);
+                    } else {
+                        autoActivateIndicator('left', distanceToNext);
+                    }
+                } else if (distanceToNext > 20 && autoIndicatorActive !== null) {
+                    deactivateAllIndicators();
+                }
+            }
+        }
+        
+        // ========== ОСНОВНЫЕ ФУНКЦИИ ==========
+        function calculateDistance(point1, point2) {
+            const R = 6371000;
+            const dLat = (point2.lat - point1.lat) * Math.PI / 180;
+            const dLng = (point2.lng - point1.lng) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(point1.lat * Math.PI / 180) * Math.cos(point2.lat * Math.PI / 180) *
+                Math.sin(dLng/2) * Math.sin(dLng/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        function calculateTotalRouteDistance(points) {
+            let total = 0;
+            for (let i = 0; i < points.length - 1; i++) {
+                total += calculateDistance(points[i], points[i + 1]);
+            }
+            return total;
+        }
+
+        function updateWaypointsList() {
+            if (!waypointsContainer) return;
+            let html = '';
+            ROUTE_POINTS.forEach((point, index) => {
+                let statusClass = '';
+                let statusText = '';
+                if (completedPoints.includes(index)) {
+                    statusClass = 'completed';
+                    statusText = ' ✓';
+                } else if (currentPointIndex === index && tripStage === 'in_progress') {
+                    statusClass = 'current';
+                    statusText = ' ⏺';
+                }
+                html += `<div class="waypoint-item ${statusClass}"><span class="waypoint-number">${index + 1}.</span><span>${point.name}</span><span>${statusText}</span></div>`;
+            });
+            waypointsContainer.innerHTML = html;
+        }
+
+        function calculatePreviewRoute() {
+            const totalDistance = calculateTotalRouteDistance(ROUTE_POINTS) / 1000;
+            const duration = (totalDistance / 40) * 60;
+            const cost = Math.round(totalDistance * 10 + duration * 5);
+            
+            previewPointsCount.textContent = ROUTE_POINTS.length;
+            previewDistanceElement.textContent = totalDistance.toFixed(2) + ' км';
+            previewDurationElement.textContent = Math.round(duration) + ' мин';
+            previewCostElement.textContent = cost + ' руб';
+            
+            currentTrip = {
+                points: [...ROUTE_POINTS],
+                totalDistance: totalDistance,
+                totalDuration: duration,
+                totalCost: cost
+            };
+        }
+
+        function showOrderModal() { orderModal.classList.add('active'); }
+        function hideOrderModal() { orderModal.classList.remove('active'); }
+
+        function startTrip() {
+            hideOrderModal();
+            tripStage = 'in_progress';
+            currentPointIndex = 0;
+            completedPoints = [];
+            tripStartTime = Date.now();
+            tripTime = 0;
+            
+            deactivateAllIndicators();
+            updateTripInterface();
+            tripPanel.classList.add('active');
+            arrivedButton.classList.add('active');
+            
+            buildRouteToCurrentPoint();
+            startTripTimer();
+            updateWaypointsList();
+            
+            if (turnCheckInterval) clearInterval(turnCheckInterval);
+            turnCheckInterval = setInterval(() => analyzeRouteForTurns(), 1000);
+            
+            setTimeout(() => {
+                if (map) {
+                    map.invalidateSize(true);
+                    mapContainer.classList.add('expanded');
+                }
+            }, 400);
+        }
+
+        function buildRouteToCurrentPoint() {
+            if (!userLocation || currentPointIndex >= ROUTE_POINTS.length) return;
+            
+            const targetPoint = ROUTE_POINTS[currentPointIndex];
+            if (routeControl) map.removeControl(routeControl);
+            
+            pointMarkers.forEach(marker => map.removeLayer(marker));
+            pointMarkers = [];
+            
+            for (let i = currentPointIndex; i < ROUTE_POINTS.length; i++) {
+                const marker = L.marker([ROUTE_POINTS[i].lat, ROUTE_POINTS[i].lng])
+                    .addTo(map)
+                    .bindPopup(ROUTE_POINTS[i].name);
+                pointMarkers.push(marker);
+            }
+            
+            routeControl = L.Routing.control({
+                waypoints: [L.latLng(userLocation.lat, userLocation.lng), L.latLng(targetPoint.lat, targetPoint.lng)],
+                routeWhileDragging: false,
+                showAlternatives: false,
+                lineOptions: { styles: [{color: '#2a5298', weight: 6, opacity: 0.8}] },
+                createMarker: () => null,
+                router: L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1' })
+            }).addTo(map);
+            
+            routeControl.on('routesfound', (e) => {
+                currentTargetElement.textContent = targetPoint.name;
+                nextTargetElement.textContent = currentPointIndex + 1 < ROUTE_POINTS.length ? ROUTE_POINTS[currentPointIndex + 1].name : 'Конечная точка';
+                totalDistanceElement.textContent = currentTrip.totalDistance.toFixed(2) + ' км';
+                completedCountElement.textContent = `${completedPoints.length}/${ROUTE_POINTS.length}`;
+                statusElement.textContent = `Едем к точке ${currentPointIndex + 1}: ${targetPoint.name}`;
+            });
+        }
+
+        function checkPointReached() {
+            if (tripStage !== 'in_progress' || currentPointIndex >= ROUTE_POINTS.length) return;
+            
+            const targetPoint = ROUTE_POINTS[currentPointIndex];
+            if (!userLocation) return;
+            
+            const distance = calculateDistance(userLocation, targetPoint);
+            if (distance < 50 && !completedPoints.includes(currentPointIndex)) {
+                completedPoints.push(currentPointIndex);
+                deactivateAllIndicators();
+                
+                if (currentPointIndex + 1 < ROUTE_POINTS.length) {
+                    currentPointIndex++;
+                    statusElement.textContent = `✅ Достигнута точка: ${targetPoint.name}`;
+                    updateTripInterface();
+                    buildRouteToCurrentPoint();
+                    updateWaypointsList();
+                    
+                    const notification = document.createElement('div');
+                    notification.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#28a745;color:white;padding:15px;border-radius:10px;z-index:3000;font-weight:bold;';
+                    notification.textContent = `📍 ${targetPoint.name}`;
+                    document.body.appendChild(notification);
+                    setTimeout(() => notification.remove(), 1500);
+                } else {
+                    completeTrip();
+                }
+                completedCountElement.textContent = `${completedPoints.length}/${ROUTE_POINTS.length}`;
+            }
+        }
+
+        function updateTripInterface() {
+            if (currentPointIndex < ROUTE_POINTS.length) {
+                tripStageElement.textContent = `Этап ${currentPointIndex + 1}/${ROUTE_POINTS.length}: ${ROUTE_POINTS[currentPointIndex].name}`;
+            }
+            tripStatusElement.textContent = `В пути: ${completedPoints.length}/${ROUTE_POINTS.length}`;
+            const progress = (completedPoints.length / ROUTE_POINTS.length) * 100;
+            tripProgressElement.textContent = Math.round(progress) + '%';
+        }
+
+        function startTripTimer() {
+            if (tripTimer) clearInterval(tripTimer);
+            tripTimer = setInterval(() => {
+                if (tripStartTime) {
+                    tripTime = Math.floor((Date.now() - tripStartTime) / 1000 / 60);
+                    tripTimeElement.textContent = tripTime + ' мин';
+                }
+            }, 1000);
+        }
+
+        function completeTrip() {
+            if (turnCheckInterval) clearInterval(turnCheckInterval);
+            if (tripTimer) clearInterval(tripTimer);
+            deactivateAllIndicators();
+            
+            tripStage = 'complete';
+            tripPanel.classList.remove('active');
+            arrivedButton.classList.remove('active');
+            
+            const totalDistance = currentTrip.totalDistance;
+            const distanceCost = totalDistance * 10;
+            const timeCost = tripTime * 5;
+            const totalCost = Math.round(distanceCost + timeCost);
+            
+            finalCostElement.textContent = totalCost + ' руб';
+            finalDistanceElement.textContent = totalDistance.toFixed(2) + ' км';
+            finalTimeElement.textContent = tripTime + ' мин';
+            distanceCostElement.textContent = Math.round(distanceCost) + ' руб';
+            timeCostElement.textContent = Math.round(timeCost) + ' руб';
+            totalCostElement.textContent = totalCost + ' руб';
+            
+            tripComplete.classList.add('active');
+            tripStatusElement.textContent = 'Маршрут завершен';
+            statusElement.textContent = 'Все точки посещены!';
+        }
+
+        function cancelTrip() {
+            if (turnCheckInterval) clearInterval(turnCheckInterval);
+            if (tripTimer) clearInterval(tripTimer);
+            deactivateAllIndicators();
+            
+            tripStage = 'idle';
+            currentPointIndex = 0;
+            completedPoints = [];
+            tripStartTime = null;
+            
+            tripPanel.classList.remove('active');
+            arrivedButton.classList.remove('active');
+            if (routeControl) map.removeControl(routeControl);
+            pointMarkers.forEach(marker => map.removeLayer(marker));
+            pointMarkers = [];
+            
+            currentTargetElement.textContent = '-';
+            nextTargetElement.textContent = '-';
+            totalDistanceElement.textContent = '-';
+            completedCountElement.textContent = '0/0';
+            tripStatusElement.textContent = 'Ожидание маршрута';
+            statusElement.textContent = 'Маршрут отменен';
+            updateWaypointsList();
+        }
+
+        // Функция скрытия/показа панели
+        function togglePanelVisibility() {
+            if (isPanelCollapsed) {
+                mainPanel.classList.remove('collapsed');
+                isPanelCollapsed = false;
+                hidePanelBtn.innerHTML = '🔽 Скрыть панель этапов';
+                mapContainer.classList.remove('expanded');
+            } else {
+                mainPanel.classList.add('collapsed');
+                isPanelCollapsed = true;
+                hidePanelBtn.innerHTML = '🔼 Показать панель этапов';
+                mapContainer.classList.add('expanded');
+            }
+            setTimeout(() => map && map.invalidateSize(true), 350);
+        }
+
+        // Инициализация карты
+        function initMap() {
+            setTimeout(() => {
+                map = L.map('map', { zoomControl: false, tap: L.Browser.touch ? false : true })
+                    .setView([56.832, 35.672], 15);
+                
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap',
+                    maxZoom: 19
+                }).addTo(map);
+                L.control.zoom({ position: 'bottomright' }).addTo(map);
+                
+                setTimeout(() => map.invalidateSize(true), 100);
+                getLocation();
+            }, 100);
+        }
+
+        function getLocation() {
+            if (navigator.geolocation) {
+                if (watchId) navigator.geolocation.clearWatch(watchId);
+                watchId = navigator.geolocation.watchPosition(
+                    position => {
+                        const newLocation = {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude,
+                            accuracy: position.coords.accuracy,
+                            timestamp: position.timestamp
+                        };
+                        if (previousPosition) {
+                            const distance = calculateDistance(previousPosition, newLocation);
+                            const timeDiff = (newLocation.timestamp - previousPosition.timestamp) / 1000 / 3600;
+                            if (timeDiff > 0) {
+                                currentSpeed = Math.abs(distance / 1000 / timeDiff);
+                                currentSpeedElement.textContent = currentSpeed.toFixed(1);
+                                if (currentSpeed > speedLimit) {
+                                    speedWarningElement.style.display = 'block';
+                                    speedNotificationElement.style.display = 'block';
+                                    setTimeout(() => speedNotificationElement.style.display = 'none', 5000);
+                                } else {
+                                    speedWarningElement.style.display = 'none';
+                                }
+                                currentSpeedElement.style.color = currentSpeed > speedLimit ? '#f44336' : (currentSpeed > speedLimit * 0.8 ? '#ff9800' : '#2e7d32');
+                            }
+                        }
+                        previousPosition = newLocation;
+                        userLocation = newLocation;
+                        
+                        if (map) {
+                            if (tripStage === 'idle') map.setView([userLocation.lat, userLocation.lng], 15);
+                            if (userMarker) userMarker.setLatLng([userLocation.lat, userLocation.lng]);
+                            else userMarker = L.marker([userLocation.lat, userLocation.lng]).addTo(map).bindPopup('Ваше местоположение');
+                            if (accuracyCircle) accuracyCircle.setLatLng([userLocation.lat, userLocation.lng]).setRadius(userLocation.accuracy);
+                            else accuracyCircle = L.circle([userLocation.lat, userLocation.lng], { color: 'blue', fillColor: '#3388ff', fillOpacity: 0.2, radius: userLocation.accuracy }).addTo(map);
+                        }
+                        
+                        statusElement.textContent = `Местоположение обновлено`;
+                        generateButton.disabled = false;
+                        if (tripStage === 'in_progress') checkPointReached();
+                    },
+                    error => {
+                        statusElement.textContent = 'Не удалось определить местоположение';
+                        setDefaultLocation();
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                );
+            } else {
+                setDefaultLocation();
+            }
+        }
+
+        function setDefaultLocation() {
+            userLocation = { lat: 56.833070, lng: 35.678086, accuracy: 100, timestamp: Date.now() };
+            if (map) {
+                map.setView([userLocation.lat, userLocation.lng], 15);
+                userMarker = L.marker([userLocation.lat, userLocation.lng]).addTo(map).bindPopup('Начальная точка');
+                accuracyCircle = L.circle([userLocation.lat, userLocation.lng], { color: 'blue', fillColor: '#3388ff', fillOpacity: 0.2, radius: userLocation.accuracy }).addTo(map);
+            }
+            statusElement.textContent = 'Используется начальная точка маршрута';
+            generateButton.disabled = false;
+        }
+
+        // Обработчики событий
+        leftIndicator.addEventListener('click', () => toggleIndicator('left'));
+        rightIndicator.addEventListener('click', () => toggleIndicator('right'));
+        hidePanelBtn.addEventListener('click', togglePanelVisibility);
+        generateButton.addEventListener('click', () => { calculatePreviewRoute(); showOrderModal(); });
+        clearButton.addEventListener('click', () => { if (tripStage !== 'idle' && confirm('Отменить маршрут?')) cancelTrip(); else cancelTrip(); });
+        closeOrderModal.addEventListener('click', hideOrderModal);
+        rejectOrderButton.addEventListener('click', hideOrderModal);
+        acceptOrderButton.addEventListener('click', startTrip);
+        cancelTripButton.addEventListener('click', () => { if (confirm('Отменить маршрут?')) cancelTrip(); });
+        nextStageButton.addEventListener('click', () => checkPointReached());
+        arrivedButton.addEventListener('click', () => checkPointReached());
+        closeTripCompleteButton.addEventListener('click', () => { tripComplete.classList.remove('active'); cancelTrip(); });
+        
+        updateIntervalInput.addEventListener('change', function() {
+            updateInterval = Math.max(1000, Math.min(10000, parseInt(this.value)));
+            if (navigator.geolocation && watchId) { navigator.geolocation.clearWatch(watchId); getLocation(); }
+        });
+        
+        speedLimitInput.addEventListener('change', function() {
+            speedLimit = Math.max(5, Math.min(200, parseInt(this.value)));
+        });
+        
+        window.addEventListener('resize', () => setTimeout(() => map && map.invalidateSize(true), 100));
+        window.addEventListener('load', initMap);
+        setTimeout(() => updateWaypointsList(), 100);
+    </script>
+</body>
+</html>
